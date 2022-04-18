@@ -1,3 +1,8 @@
+# How to run things ------------------------------------------------------------
+# run this as:
+#  nohup R < R/annexes.R --vanilla > logs/anexes_2022-04-18.log &
+lubridate::now()
+
 library(sf)
 library(lubridate)
 library(tidyverse)
@@ -6,10 +11,10 @@ TODAY <- today() %>% as.character()
 
 sq <- read_sf("ftp://ftp.hafro.is/pub/data/shapes/ices_rectangles.gpkg")
 
-YEARS <- 2020:2009
+YEARS <- 2021:2009
 
 LGSc <- 
-  read_rds("data/LGS_collapsed.rds") %>% 
+  read_rds("data/logbooks.rds") %>% 
   # fix upstream, or better still delete upstream
   mutate(month = ifelse(is.na(month), month(date), month))
 
@@ -86,7 +91,7 @@ annex2 <-
 
 if(EXPORT) {
   annex2 %>%
-    write_csv(paste0("delivery/iceland_annex2_2009_2020_", TODAY, ".csv"),
+    write_csv(paste0("delivery/iceland_annex2_2009_2021_", TODAY, ".csv"),
               na = "",
               col_names = FALSE)
 }
@@ -111,7 +116,7 @@ speed.criterion <-
           15,    0.500, 5.500,
           38,    0.250, 4.750,
           40,    0.250, 6.000)
-fil <- paste0("data/is_vms_visir2", YEARS, ".rds")
+fil <- paste0("data/is_vms_visir", YEARS, ".rds")
 
 res <- list()
 
@@ -165,7 +170,7 @@ n0.ais <- nrow(ais)
 rm(res)
 
 LGS <- 
-  read_rds("data/LGS_collapsed.rds") %>% 
+  read_rds("data/logbooks.rds") %>% 
   mutate(dcf4 = ifelse(dcf4 == "GSN", "GNS", dcf4),
          dcf5 = str_sub(dcf6, 5, 7),
          length_class = case_when(length_class == "<8" ~ "A",
@@ -251,9 +256,11 @@ annex1 <-
 
 if(EXPORT) {
   annex1 %>% 
-    write_csv(paste0("delivery/iceland_annex1_2009_2020_", TODAY, ".csv"),
+    write_csv(paste0("delivery/iceland_annex1_2009_2021_", TODAY, ".csv"),
               na = "", 
               col_names = FALSE)
 }
 
 table(annex1$year, useNA = "ifany")
+
+devtools::session_info()
