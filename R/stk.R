@@ -143,3 +143,5 @@ for(y in 1:length(YEARS)) {
   bind_rows(res) %>%
     write_rds(paste0("data/is_vms_visir", YEAR, ".rds"))
 }
+
+devtools::session_info()
