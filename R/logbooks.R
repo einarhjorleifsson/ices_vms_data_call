@@ -1,6 +1,6 @@
 # How to run things ------------------------------------------------------------
 # run this as:
-#  nohup R < R/01_logbook-corrections.R --vanilla > logs/01_logbooks-corrections-2021-08-23.log &
+#  nohup R < R/logbooks.R --vanilla > logs/logbooks_2022-04-18.log &
 lubridate::now()
 
 # A brief outline --------------------------------------------------------------
@@ -35,7 +35,7 @@ lubridate::now()
 
 
 
-YEARS <- 2020:2009
+YEARS <- 2021:2009
 
 library(data.table)
 library(tidyverse)
@@ -81,7 +81,7 @@ vessels <-
   omar::vid_registry(con, standardize = TRUE) %>% 
   # no dummy vessels
   filter(!vid %in% c(0, 1, 3:5),
-         !is.na(name)) %>% 
+         !is.na(vessel)) %>% 
   arrange(vid)
 tmp.lb.base <-
   mar:::lb_base(con) %>%
@@ -428,7 +428,9 @@ paste("Number of records:", nrow(LGS))
 
 # 8. Match vid with mobileid in stk --------------------------------------------
 vid.stk <-
-  mar:::stk_mobile_icelandic(con, correct = TRUE, vidmatch = TRUE) %>% 
+  # 2022-04-18 change
+  # mar:::stk_mobile_icelandic(con, correct = TRUE, vidmatch = TRUE) %>% 
+  tbl_mar(con, "ops$einarhj.MID_VID_ICELANDIC_20220418") %>% 
   collect(n = Inf)
 # Create a summary overview of logbook and stk informations, not necessary
 #  for the workflow
@@ -455,7 +457,7 @@ summary.stk <-
   bind_rows(stk_trail(con) %>% 
               filter(mid %in% mids1,
                      time >= to_date("2009-01-01", "YYYY:MM:DD"),
-                     time <  to_date("2020-12-31", "YYYY:MM:DD")) %>% 
+                     time <  to_date("2021-12-31", "YYYY:MM:DD")) %>% 
               group_by(mid) %>% 
               summarise(n.stk = n(),
                         min.time = min(time, na.rm = TRUE),
@@ -464,7 +466,7 @@ summary.stk <-
             stk_trail(con) %>% 
               filter(mid %in% mids2,
                      time >= to_date("2009-01-01", "YYYY:MM:DD"),
-                     time <  to_date("2020-12-31", "YYYY:MM:DD")) %>% 
+                     time <  to_date("2021-12-31", "YYYY:MM:DD")) %>% 
               group_by(mid) %>% 
               summarise(n.stk = n(),
                         min.time = min(time, na.rm = TRUE),
@@ -483,13 +485,13 @@ d <-
   ungroup() %>% 
   # 2021-08-23 changes
   left_join(omar:::vid_registry(con, standardize = TRUE) %>% 
-              select(vid, name) %>% 
+              select(vid, vessel) %>% 
               collect(n = Inf), by = "vid") %>% 
-  select(vid, mid, name, n.lgs, n.stk, n.mid, everything()) %>% 
+  select(vid, mid, vessel, n.lgs, n.stk, n.mid, everything()) %>% 
   arrange(vid)
 d %>% 
   filter(is.na(mid)) %>% 
-  select(vid, name, n.lgs, n.gid:max.date) %>% 
+  select(vid, vessel, n.lgs, n.gid:max.date) %>% 
   knitr::kable(caption = "Vessels with no matching mobileid")
 d %>% 
   filter(!is.na(mid),
@@ -502,6 +504,7 @@ vidmid_lookup <-
   d %>% 
   select(vid, mid)
 # add mobileid as string to LGS, this could also have been archieved with nest
+# 2022-04-18: Not sure why doing this
 d2 <- 
   d %>% 
   select(vid, mid) %>% 
@@ -509,7 +512,7 @@ d2 <-
   group_by(vid) %>% 
   mutate(midnr = 1:n()) %>% 
   spread(midnr, mid) %>% 
-  mutate(mids = case_when(!is.na(`3`) ~ paste(`1`, `2`, `3`, sep = "-"),
+  mutate(mids = case_when(#!is.na(`3`) ~ paste(`1`, `2`, `3`, sep = "-"),
                           !is.na(`2`) ~ paste(`1`, `2`, sep = "-"),
                           TRUE ~ as.character(`1`))) %>% 
   select(vid, mids)
@@ -525,7 +528,7 @@ paste("Number of records:", nrow(LGS))
 vessels <- 
   omar:::vid_registry(con, standardize = TRUE) %>% 
   filter(!vid %in% c(0, 1, 3:5),
-         !is.na(name)) %>% 
+         !is.na(vessel)) %>% 
   arrange(vid) %>% 
   collect(n = Inf) %>% 
   filter(vid %in% unique(LGS$vid))
@@ -761,6 +764,6 @@ LGS %>%
 LGS.collapsed <- 
   bind_rows(lgs1, lgs2B)
 
-LGS.collapsed %>% write_rds("data/LGS_collapsed.rds")
+LGS.collapsed %>% write_rds("data/logbooks.rds")
 
 devtools::session_info()
