@@ -87,13 +87,18 @@ annex2 <-
 
 annex2 <- 
   annex2 %>% 
-  mutate(vids = ifelse(is.na(vids), "-9", vids))
+  mutate(vids = ifelse(is.na(vids), "-9", vids)) %>% 
+  # 2022-04-27: Seems like this is no longer required, see 3_data_submission.R
+  select(-c(lowermeshsize, uppermeshsize))
 
 if(EXPORT) {
   annex2 %>%
     write_csv(paste0("delivery/iceland_annex2_2009_2021_", TODAY, ".csv"),
               na = "",
               col_names = FALSE)
+  annex2 %>% 
+    write_rds(paste0("data/iceland_annex2_2009_2021_", TODAY, ".rds"))
+  
 }
 
 # end: Annex 2 - logbooks
@@ -252,13 +257,18 @@ print(c(n.annex1, nrow(annex1)))
 
 annex1 <- 
   annex1 %>% 
-  mutate(vids = ifelse(is.na(vids), "-9", vids))
+  mutate(vids = ifelse(is.na(vids), "-9", vids)) %>% 
+  # 2022-04-27: Seems like this is no longer required, see 3_data_submission.R
+  select(-c(lowermeshsize, uppermeshsize))
+
 
 if(EXPORT) {
   annex1 %>% 
     write_csv(paste0("delivery/iceland_annex1_2009_2021_", TODAY, ".csv"),
               na = "", 
               col_names = FALSE)
+  annex1 %>% 
+    write_rds(paste0("data/iceland_annex1_2009_2021_", TODAY, ".rds"))
 }
 
 table(annex1$year, useNA = "ifany")
