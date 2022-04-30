@@ -1,11 +1,12 @@
 # How to run things ------------------------------------------------------------
 # run this as:
-#  nohup R < R/annexes.R --vanilla > logs/anexes_2022-04-18.log &
+#  nohup R < R/annexes.R --vanilla > logs/anexes_2022-04-30.log &
 lubridate::now()
 
 library(sf)
 library(lubridate)
 library(tidyverse)
+library(icesVocab)
 EXPORT <- TRUE
 TODAY <- today() %>% as.character()
 
@@ -13,10 +14,22 @@ sq <- read_sf("ftp://ftp.hafro.is/pub/data/shapes/ices_rectangles.gpkg")
 
 YEARS <- 2021:2009
 
+# Get the values accepted in this vocabulary dataset
+vlen_ices <- getCodeList("VesselLengthClass") ### Get DATSU Vocabulary list for selected dataset
+# Filter values that aren't deprecated, overlapped  or not accepted by data call requirements
+vlen_icesc <-  vlen_ices%>%slice(2, 4, 6, 7, 8, 10, 11, 12, 13 )%>%select(Key)
+
 LGSc <- 
   read_rds("data/logbooks.rds") %>% 
   # fix upstream, or better still delete upstream
-  mutate(month = ifelse(is.na(month), month(date), month))
+  mutate(month = ifelse(is.na(month), month(date), month)) %>%
+  # 2022-04-30 Length class code changed, again!
+  mutate(length_class = cut(length,
+                            breaks=c(0, 6, 8, 10, 12, 15, 18, 24, 40, 'inf' ), 
+                            right = FALSE    ,
+                            include.lowest = TRUE,
+                            labels =  vlen_icesc$Key))
+
 
 # ------------------------------------------------------------------------------
 # Annex 2 - logbooks
@@ -78,12 +91,7 @@ annex2 <-
   annex2 %>% 
   filter(ices %in% sq$icesname) %>% 
   mutate(dcf4 = ifelse(dcf4 == "GSN", "GNS", dcf4),
-         dcf5 = str_sub(dcf6, 5, 7),
-         length_class = case_when(length_class == "<8" ~ "A",
-                                  length_class == "08-10" ~ "B",
-                                  length_class == "10-12" ~ "C",
-                                  length_class == "12-15" ~ "D",
-                                  length_class == ">=15" ~ "E"))
+         dcf5 = str_sub(dcf6, 5, 7))
 
 annex2 <- 
   annex2 %>% 
@@ -145,9 +153,9 @@ for(y in 1:length(YEARS)) {
     #             The reason one wants to filter points is that one often gets
     #             wrong extrapolations. So on the TODO list is to create an
     #             algorithm right upstream that takes care of "wacky" points
-    #filter(vms) %>% 2021-08-17: Used in the May 2021 delivery
-    left_join(speed.criterion,
-              by = "gid") %>% 
+  #filter(vms) %>% 2021-08-17: Used in the May 2021 delivery
+  left_join(speed.criterion,
+            by = "gid") %>% 
     mutate(fishing = ifelse(speed >= s1 & speed <= s2, TRUE, FALSE)) %>% 
     group_by(visir) %>% 
     mutate(effort = sum(fishing)) %>% # units are minutes
@@ -177,12 +185,13 @@ rm(res)
 LGS <- 
   read_rds("data/logbooks.rds") %>% 
   mutate(dcf4 = ifelse(dcf4 == "GSN", "GNS", dcf4),
-         dcf5 = str_sub(dcf6, 5, 7),
-         length_class = case_when(length_class == "<8" ~ "A",
-                                  length_class == "08-10" ~ "B",
-                                  length_class == "10-12" ~ "C",
-                                  length_class == "12-15" ~ "D",
-                                  length_class == ">=15" ~ "E"))
+         dcf5 = str_sub(dcf6, 5, 7)) %>% 
+  # 2022-04-30 Length class code changed, again!
+  mutate(length_class = cut(length,
+                            breaks=c(0, 6, 8, 10, 12, 15, 18, 24, 40, 'inf' ), 
+                            right = FALSE    ,
+                            include.lowest = TRUE,
+                            labels =  vlen_icesc$Key))
 
 ais <- 
   ais %>% 
