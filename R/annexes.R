@@ -1,14 +1,37 @@
 # How to run things ------------------------------------------------------------
 # run this as:
-#  nohup R < R/annexes.R --vanilla > logs/anexes_2022-04-30.log &
+#  nohup R < R/annexes.R --vanilla > logs/anexes_2022-06-09.log &
 lubridate::now()
+
 
 library(sf)
 library(lubridate)
 library(tidyverse)
 library(icesVocab)
-EXPORT <- TRUE
+source("R/functions.R")
+EXPORT <- FALSE
+JUNE2022_fix_catch_scaling <- TRUE
+print("2022-06-09: Although rerunning, only reading in csv file, correct catch scale and saving again.")
 TODAY <- today() %>% as.character()
+
+if(JUNE2022_fix_catch_scaling) {
+  an2 <- 
+    read_le("delivery/iceland_annex2_2009_2021_2022-04-30.csv")
+  an2 %>%
+    mutate(catch = catch * 1e3) %>% 
+    write_csv(paste0("delivery/iceland_annex2_2009_2021_", TODAY, ".csv"),
+              na = "",
+              col_names = FALSE)
+  an1 <- 
+    read_ve("delivery/iceland_annex1_2009_2021_2022-04-30.csv")
+  an1 %>%
+    mutate(catch = catch * 1e3) %>% 
+    write_csv(paste0("delivery/iceland_annex1_2009_2021_", TODAY, ".csv"),
+              na = "",
+              col_names = FALSE)
+  
+}
+
 
 sq <- read_sf("ftp://ftp.hafro.is/pub/data/shapes/ices_rectangles.gpkg")
 
@@ -108,6 +131,8 @@ if(EXPORT) {
     write_rds(paste0("data/iceland_annex2_2009_2021_", TODAY, ".rds"))
   
 }
+
+
 
 # end: Annex 2 - logbooks
 # ------------------------------------------------------------------------------
@@ -279,6 +304,8 @@ if(EXPORT) {
   annex1 %>% 
     write_rds(paste0("data/iceland_annex1_2009_2021_", TODAY, ".rds"))
 }
+
+
 
 table(annex1$year, useNA = "ifany")
 

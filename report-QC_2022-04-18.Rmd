@@ -91,17 +91,17 @@ read_le <- function(file) {
                   isq = 7,
                   dcf4 = 8,
                   dcf5 = 9,
-                  #lowermeshsize = 10,
-                  #uppermeshsize = 11,
-                  dcf6 = 10,
-                  lclass = 11,
-                  vms = 12,
-                  effort = 13,
-                  kwd = 14,
-                  catch = 15,
-                  value = 16) %>% 
-    dplyr::mutate(#lowermeshsize = as.numeric(lowermeshsize),
-                  #uppermeshsize = as.numeric(uppermeshsize),
+                  lowermeshsize = 10,
+                  uppermeshsize = 11,
+                  dcf6 = 12,
+                  lclass = 13,
+                  vms = 14,
+                  effort = 15,
+                  kwd = 16,
+                  catch = 17,
+                  value = 18) %>% 
+    dplyr::mutate(lowermeshsize = as.numeric(lowermeshsize),
+                  uppermeshsize = as.numeric(uppermeshsize),
                   value = as.numeric(value),
                   lon = ir2d(isq)$lon,
                   lat = ir2d(isq)$lat)
@@ -121,20 +121,20 @@ read_ve <- function(file) {
                   csq = 7,
                   dcf4 = 8,
                   dcf5 = 9,
-                  #lowermeshsize = 10,
-                  #uppermeshsize = 11,
-                  dcf6 = 10,
-                  lclass = 11,
-                  speed = 12,
-                  effort = 13,             # units in hours
-                  length = 14,             # average vessel length
-                  kw = 15,                 # average kw
-                  kwh = 16,                # kw x effort
-                  catch = 17,
-                  value = 18,
-                  spread = 19) %>% 
-    dplyr::mutate(#lowermeshsize = as.numeric(lowermeshsize),
-                  #uppermeshsize = as.numeric(uppermeshsize),
+                  lowermeshsize = 10,
+                  uppermeshsize = 11,
+                  dcf6 = 12,
+                  lclass = 13,
+                  speed = 14,
+                  effort = 15,             # units in hours
+                  length = 16,             # average vessel length
+                  kw = 17,                 # average kw
+                  kwh = 18,                # kw x effort
+                  catch = 19,
+                  value = 20,
+                  spread = 21) %>% 
+    dplyr::mutate(lowermeshsize = as.numeric(lowermeshsize),
+                  uppermeshsize = as.numeric(uppermeshsize),
                   value = as.numeric(value))
 }
 
@@ -149,13 +149,13 @@ lclass <-
 
 # Get data ---------------------------------------------------------------------
 ve <- 
-  read_ve("delivery/iceland_annex1_2009_2021_2022-06-09.csv") %>% 
+  read_ve("delivery/iceland_annex1_2009_2021_2022-04-18.csv") %>% 
   csq2pos() %>% 
   # NEED TO CHECK THIS UPSTREAM
   filter(!is.na(lon)) %>% 
   mutate(isq = geo::d2ir(lat, lon))
 le <- 
-  read_le("delivery/iceland_annex2_2009_2021_2022-06-09.csv")
+  read_le("delivery/iceland_annex2_2009_2021_2022-04-18.csv")
 
 
 # some bounds ------------------------------------------------------------------
