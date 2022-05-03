@@ -7,7 +7,7 @@ library(sf)
 library(lubridate)
 library(tidyverse)
 library(icesVocab)
-EXPORT <- TRUE
+EXPORT <- FALSE
 TODAY <- today() %>% as.character()
 
 sq <- read_sf("ftp://ftp.hafro.is/pub/data/shapes/ices_rectangles.gpkg")
