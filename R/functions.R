@@ -67,8 +67,6 @@ read_le <- function(file) {
                   isq = 7,
                   dcf4 = 8,
                   dcf5 = 9,
-                  #lowermeshsize = 10,
-                  #uppermeshsize = 11,
                   dcf6 = 10,
                   lclass = 11,
                   vms = 12,
@@ -76,11 +74,7 @@ read_le <- function(file) {
                   kwd = 14,
                   catch = 15,
                   value = 16) %>% 
-    dplyr::mutate(#lowermeshsize = as.numeric(lowermeshsize),
-      #uppermeshsize = as.numeric(uppermeshsize),
-      value = as.numeric(value),
-      lon = ir2d(isq)$lon,
-      lat = ir2d(isq)$lat)
+    dplyr::mutate(value = as.numeric(value))
 }
 read_ve <- function(file) {
   
@@ -97,8 +91,6 @@ read_ve <- function(file) {
                   csq = 7,
                   dcf4 = 8,
                   dcf5 = 9,
-                  #lowermeshsize = 10,
-                  #uppermeshsize = 11,
                   dcf6 = 10,
                   lclass = 11,
                   speed = 12,
@@ -109,9 +101,7 @@ read_ve <- function(file) {
                   catch = 17,
                   value = 18,
                   spread = 19) %>% 
-    dplyr::mutate(#lowermeshsize = as.numeric(lowermeshsize),
-      #uppermeshsize = as.numeric(uppermeshsize),
-      value = as.numeric(value))
+    dplyr::mutate(value = as.numeric(value))
 }
 
 # support tables ---------------------------------------------------------------
