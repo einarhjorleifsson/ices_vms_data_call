@@ -155,7 +155,9 @@ ve <-
   filter(!is.na(lon)) %>% 
   mutate(isq = geo::d2ir(lat, lon))
 le <- 
-  read_le("delivery/iceland_annex2_2009_2021_2022-06-09.csv")
+  read_le("delivery/iceland_annex2_2009_2021_2022-06-19.csv") %>% 
+  mutate(lon = ir2d(isq)$lon,
+         lat = ir2d(isq)$lat)
 
 
 # some bounds ------------------------------------------------------------------
