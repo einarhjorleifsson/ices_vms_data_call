@@ -10,15 +10,19 @@ library(tidyverse)
 library(icesVocab)
 source("R/functions.R")
 EXPORT <- FALSE
-JUNE2022_fix_catch_scaling <- TRUE
-print("2022-06-09: Although rerunning, only reading in csv file, correct catch scale and saving again.")
 TODAY <- today() %>% as.character()
 
-if(JUNE2022_fix_catch_scaling) {
+if(FALSE) {
   an2 <- 
-    read_le("delivery/iceland_annex2_2009_2021_2022-04-30.csv")
+    # this was part of the code delivery submitted 2022-06-09
+    #  problem is that read_le generates lon and lat from csquare
+    #  read_le("delivery/iceland_annex2_2009_2021_2022-04-30.csv")
+    read.csv("delivery/iceland_annex2_2009_2021_2022-04-30.csv",
+             header = FALSE,
+             na.strings = "NULL")
   an2 %>%
-    mutate(catch = catch * 1e3) %>% 
+    # the catch column
+    mutate(V15 = V15 * 1e3) %>% 
     write_csv(paste0("delivery/iceland_annex2_2009_2021_", TODAY, ".csv"),
               na = "",
               col_names = FALSE)
