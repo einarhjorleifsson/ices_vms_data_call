@@ -1,6 +1,6 @@
 # How to run things ------------------------------------------------------------
 # run this as:
-#  nohup R < R/annexes.R --vanilla > logs/anexes_2022-06-09.log &
+#  nohup R < R/annexes.R --vanilla > logs/anexes_2023-05-26.log &
 lubridate::now()
 
 
@@ -9,7 +9,7 @@ library(lubridate)
 library(tidyverse)
 library(icesVocab)
 source("R/functions.R")
-EXPORT <- FALSE
+EXPORT <- TRUE
 TODAY <- today() %>% as.character()
 
 if(FALSE) {
@@ -39,15 +39,16 @@ if(FALSE) {
 
 sq <- read_sf("ftp://ftp.hafro.is/pub/data/shapes/ices_rectangles.gpkg")
 
-YEARS <- 2021:2009
+YEARS <- 2022:2009
 
 # Get the values accepted in this vocabulary dataset
 vlen_ices <- getCodeList("VesselLengthClass") ### Get DATSU Vocabulary list for selected dataset
 # Filter values that aren't deprecated, overlapped  or not accepted by data call requirements
-vlen_icesc <-  vlen_ices%>%slice(2, 4, 6, 7, 8, 10, 11, 12, 13 )%>%select(Key)
+vlen_icesc <-  vlen_ices %>% slice(2, 4, 6, 7, 8, 10, 11, 12, 13 )%>%select(Key)
 
 LGSc <- 
   read_rds("data/logbooks.rds") %>% 
+  mutate(month = month(date)) |> 
   # fix upstream, or better still delete upstream
   mutate(month = ifelse(is.na(month), month(date), month)) %>%
   # 2022-04-30 Length class code changed, again!
@@ -58,18 +59,17 @@ LGSc <-
                             labels =  vlen_icesc$Key))
 
 
-# ------------------------------------------------------------------------------
-# Annex 2 - logbooks
+# Annex 2 - logbooks -----------------------------------------------------------
 
 twovessels <-
   LGSc %>%
-  select(year, month, ices, dcf4, dcf5, dcf6, length_class, vid0) %>%
+  select(year, month, ices, m4, m5, m6, length_class, vid0) %>%
   distinct() %>%
-  group_by(year, month, ices, dcf4, dcf6, length_class) %>%
+  group_by(year, month, ices, m4, m6, length_class) %>%
   mutate(n_vessel = n_distinct(vid0)) %>%
   ungroup() %>%
   filter(n_vessel %in% 1:2) %>%
-  group_by(year, month, ices, dcf4, dcf6, length_class) %>%
+  group_by(year, month, ices, m4, m6, length_class) %>%
   mutate(vids = case_when(n_vessel == 1 ~ vid0,
                           n_vessel == 2 ~ paste0(vid0, ";", lead(vid0)))) %>%
   slice(1) %>%
@@ -87,14 +87,14 @@ annex2 <-
   group_by(vid, date) %>% 
   mutate(pdays = 1 / n()) %>% 
   ungroup() %>% 
-  group_by(year, month, ices, dcf4, dcf5, dcf6, length_class, vid) %>%
+  group_by(year, month, ices, m4, m5, m6, length_class, vid) %>%
   # 2021-05-11: Here sum fraction of fishing days, not n_distinct(date)
   summarise(FishingDays = sum(pdays),
             kwdays = sum(FishingDays * kw),
             catch = sum(total),
             .groups = "drop") %>%
   # then just summarise over vessels
-  group_by(year, month, ices, dcf4, dcf5, dcf6, length_class) %>%
+  group_by(year, month, ices, m4, m5, m6, length_class) %>%
   summarise(n_vessel = n_distinct(vid),
             FishingDays = sum(FishingDays),
             kwdays = sum(kwdays),
@@ -109,16 +109,14 @@ annex2 <-
          lowermeshsize = NA,
          uppermeshsize = NA) %>% 
   # CHECK with datacall where lower/uppermeshsize is in the order of things
-  select(type, country, year, month, n_vessel, vids, ices, dcf4, dcf5, 
+  select(type, country, year, month, n_vessel, vids, ices, m4, m5, 
          lowermeshsize, uppermeshsize,
-         dcf6, length_class,
+         m6, length_class,
          vms, FishingDays, kwdays, catch, value)
 
 annex2 <- 
   annex2 %>% 
-  filter(ices %in% sq$icesname) %>% 
-  mutate(dcf4 = ifelse(dcf4 == "GSN", "GNS", dcf4),
-         dcf5 = str_sub(dcf6, 5, 7))
+  filter(ices %in% sq$icesname)
 
 annex2 <- 
   annex2 %>% 
@@ -128,21 +126,18 @@ annex2 <-
 
 if(EXPORT) {
   annex2 %>%
-    write_csv(paste0("delivery/iceland_annex2_2009_2021_", TODAY, ".csv"),
+    write_csv(paste0("delivery/iceland_annex2_2009_2022_", TODAY, ".csv"),
               na = "",
               col_names = FALSE)
   annex2 %>% 
-    write_rds(paste0("data/iceland_annex2_2009_2021_", TODAY, ".rds"))
+    write_rds(paste0("data/iceland_annex2_2009_2022_", TODAY, ".rds"))
   
 }
 
-
-
 # end: Annex 2 - logbooks
-# ------------------------------------------------------------------------------
 
-# ------------------------------------------------------------------------------
-# Annex 1 - ais/vms
+
+# Annex 1 - ais/vms ------------------------------------------------------------
 speed.criterion <-
   tribble(~gid,  ~s1,  ~s2,
           -199, 1.000, 3.000,
@@ -158,10 +153,9 @@ speed.criterion <-
           15,    0.500, 5.500,
           38,    0.250, 4.750,
           40,    0.250, 6.000)
-fil <- paste0("data/is_vms_visir", YEARS, ".rds")
 
+fil <- paste0("data/is_vms_visir_y", YEARS, ".rds")
 res <- list()
-
 for(y in 1:length(YEARS)) {
   
   print(YEARS[y])
@@ -207,14 +201,17 @@ ais <-
   #             to calculate a statistics for spreading the catches of an 
   #             fishing activity to each ping.
   mutate(n.pings.per.visir = n()) %>%
+  # 2023-05-21 Ping interval
+  mutate(dt = difftime(lead(time), time, units = "mins") |> as.numeric(),
+         dt = replace_na(dt, mean(dt, na.rm = TRUE))) |> 
   ungroup()
 n0.ais <- nrow(ais)
 rm(res)
 
 LGS <- 
   read_rds("data/logbooks.rds") %>% 
-  mutate(dcf4 = ifelse(dcf4 == "GSN", "GNS", dcf4),
-         dcf5 = str_sub(dcf6, 5, 7)) %>% 
+  mutate(m4 = ifelse(m4 == "GSN", "GNS", m4),
+         m5 = str_sub(m6, 5, 7)) %>% 
   # 2022-04-30 Length class code changed, again!
   mutate(length_class = cut(length,
                             breaks=c(0, 6, 8, 10, 12, 15, 18, 24, 40, 'inf' ), 
@@ -225,7 +222,7 @@ LGS <-
 ais <- 
   ais %>% 
   left_join(LGS %>%
-              select(visir, vid0, gid, catch = total, gear.width, length, length_class, kw, dcf4, dcf5, dcf6)) %>%
+              select(visir, vid0, gid, catch = total, gear.width, length, length_class, kw, m4, m5, m6)) %>%
   mutate(catch = catch / n.pings.per.visir,
          #towtime = towtime / n.pings,
          csquare = vmstools::CSquare(lon, lat, 0.05))
@@ -248,13 +245,13 @@ print(c(n0.ais, n2.ais.filtered))
 #ais %>% write_rds("data/is_vms_2009-2020-speed_filter_lgs-merged.rds")
 twovessels <-
   ais %>%
-  select(year, month, csquare, dcf4, dcf5, dcf6, length_class, vid0) %>%
+  select(year, month, csquare, m4, m5, m6, length_class, vid0) %>%
   distinct() %>%
-  group_by(year, month, csquare, dcf4, dcf5, dcf6, length_class) %>%
+  group_by(year, month, csquare, m4, m5, m6, length_class) %>%
   mutate(n_vessel = n_distinct(vid0)) %>%
   ungroup() %>%
   filter(n_vessel %in% 1:2) %>%
-  group_by(year, month, csquare, dcf4, dcf6, length_class) %>%
+  group_by(year, month, csquare, m4, m6, length_class) %>%
   mutate(vids = case_when(n_vessel == 1 ~ vid0,
                           n_vessel == 2 ~ paste0(vid0, ";", lead(vid0)))) %>%
   slice(1) %>%
@@ -262,8 +259,10 @@ twovessels <-
   select(-vid0)
 annex1 <-
   ais %>%
-  group_by(year, month, csquare, dcf4, dcf5, dcf6, length_class) %>%
+  group_by(year, month, csquare, m4, m5, m6, length_class) %>%
   summarise(speed  = mean(speed),
+            # 2023-05-21  Ping interval
+            dt = mean(dt),
             # 2021-08-10: The line below was used to derive effort for the data
             #             delivered in May 2021. However this is TOTALLY wrong
             #             because the n.pings is already the sum of the pings
@@ -279,6 +278,8 @@ annex1 <-
             n_vessel = n_distinct(vid),
             .groups = "drop")
 n.annex1 <- nrow(annex1)
+
+
 annex1 <- 
   annex1 %>% 
   left_join(twovessels) %>% 
@@ -288,9 +289,10 @@ annex1 <-
          lowermeshsize = NA,
          uppermeshsize = NA) %>% 
   select(type, country, year, month, n_vessel, vids, csquare,
-         dcf4, dcf5, lowermeshsize, uppermeshsize, dcf6,
+         m4, m5, lowermeshsize, uppermeshsize, m6,
          length_class, 
-         speed, effort, length, kw, kwh, catch, value, spread)
+         # 2023-05-21 add the dt
+         speed, effort, dt, length, kw, kwh, catch, value, spread)
 print(c(n.annex1, nrow(annex1)))
 
 annex1 <- 
@@ -302,11 +304,11 @@ annex1 <-
 
 if(EXPORT) {
   annex1 %>% 
-    write_csv(paste0("delivery/iceland_annex1_2009_2021_", TODAY, ".csv"),
+    write_csv(paste0("delivery/iceland_annex1_2009_2022_", TODAY, ".csv"),
               na = "", 
               col_names = FALSE)
   annex1 %>% 
-    write_rds(paste0("data/iceland_annex1_2009_2021_", TODAY, ".rds"))
+    write_rds(paste0("data/iceland_annex1_2009_2022_", TODAY, ".rds"))
 }
 
 

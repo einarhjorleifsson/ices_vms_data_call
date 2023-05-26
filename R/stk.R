@@ -1,19 +1,18 @@
 # ------------------------------------------------------------------------------
 # run this as:
-#  nohup R < R/stk.R --vanilla > logs/stk_2022-04-18.log &
+#  nohup R < R/stk.R --vanilla > logs/stk_2023-05-26.log &
 
 library(tidyverse)
 library(lubridate)
 library(mar)
 con <- connect_mar()
-YEARS <- 2021:2009
+YEARS <- 2022:2009
 
 
 LB <- read_rds("data/logbooks.rds")
-VID_MID <- 
-  read_rds("data/VID_MID.rds") %>% 
-  select(vid, mid) %>% 
-  filter(!is.na(mid))
+
+ais_files <- dir("~/stasi/gis/AIS_TRAIL/trails", full.names = TRUE)
+
 
 for(y in 1:length(YEARS)) {
   
@@ -31,35 +30,30 @@ for(y in 1:length(YEARS)) {
     mutate(year = year(time),
            time = round_date(time, "minutes"))
   
-  vidmid.year <-
-    VID_MID %>% 
-    filter(vid %in% unique(LB.year$vid))
-    
-  print(paste("Number of unique vid:", length(unique(vidmid.year$vid))))
-  print(paste("Number of unique mid:", length(unique(vidmid.year$mid))))
-  
-  MIDs <-
-    vidmid.year %>%
-    pull(mid) %>%
-    unique()
-  
+  f <- ais_files |> str_detect(paste0("_y", YEAR))
+
   VMS <-
-    vms(con, YEAR) %>%
-    collect(n = Inf) %>% 
-    filter(mobileid %in% MIDs) %>%
-    select(mid = mobileid, time = date, lon, lat, speed) %>%
-    collect(n = Inf) %>%
+    ais_files[f] |> 
+    map(read_rds) |> 
+    bind_rows() |> 
+    filter(.cid > 0, 
+           v %in% c("end_location", "not")) |> 
+    select(vid, time, lon, lat, speed) %>%
     filter(between(lon, -44, 68.50),
            between(lat,  36, 85.50)) %>%
     distinct() %>%
     mutate(vms = TRUE) %>%
-    arrange(mid, time) %>%
-    select(mid, time, lon, lat, speed, vms) %>% 
+    arrange(vid, time) %>%
+    select(vid, time, lon, lat, speed, vms) %>% 
     mutate(time = round_date(time, "minutes"))
   
   # loop though each vessel, in some cases it has more than on mid
   VIDs <- 
-    vidmid.year %>%
+    VMS |> 
+    select(vid) |> 
+    distinct() |> 
+    # only vessels with logbook records within the year
+    inner_join(LB.year |> select(vid) |> distinct()) |> 
     pull(vid) %>%
     unique()
   
@@ -68,33 +62,12 @@ for(y in 1:length(YEARS)) {
   for(v in 1:length(VIDs)) {
     print(paste(YEAR, v, VIDs[v]))
     
-    MIDforVID <- 
-      vidmid.year %>% 
-      filter(vid == VIDs[v]) %>% 
-      pull(mid)
-    
     VMS.vessel <-
       VMS %>%
-      filter(mid %in% MIDforVID) %>%
+      filter(vid %in% VIDs[v]) %>%
       # HERE: get rid of wacky points via derived speed
       arrange(time) %>%
-      #group_by(vid) %>%
-      #mutate(dist = geo::arcdist(lead(lat), lead(lon), lat, lon),   # distance to next point
-      #       time2 = as.numeric(lead(time) - time) / (60 * 60),     # duration to next point
-      #       speed2 = dist/time2) %>%                               # speed on next "leg"
-      #filter(speed2 <= 20 | is.na(speed2)) %>%
-      #select(-c(time2, speed2, dist)) %>%
-      # end of wacky
-      # HERE: get rid of wacky points again via derived speed
-      #arrange(vid, time) %>%
-      #group_by(vid) %>%
-      #mutate(dist = geo::arcdist(lead(lat), lead(lon), lat, lon),   # distance to next point
-    #       time2 = as.numeric(lead(time) - time) / (60 * 60),     # duration to next point
-    #       speed2 = dist/time2) %>%                               # speed on next "leg"
-    #filter(speed2 <= 20 | is.na(speed2)) %>%
-    #select(-c(time2, speed2, dist)) %>%
-    # end of wacky
-    mutate(time = round_date(time, "minutes"))
+      mutate(time = round_date(time, "minutes"))
     
     LB.year.vid <-
       LB.year %>%
@@ -133,7 +106,7 @@ for(y in 1:length(YEARS)) {
         mutate(lon = approx(y, lon, y, method = "linear", rule = 1, f = 0, ties = mean)$y,
                lat = approx(y, lat, y, method = "linear", rule = 1, f = 0, ties = mean)$y,
                speed = approx(y, speed, y, method = "linear", rule = 1, f = 0, ties = mean)$y) %>%
-        select(vid, gid, visir, time, lon, lat, speed, mid, vms) %>% 
+        select(vid, gid, visir, time, lon, lat, speed, vms) %>% 
         # drop values that have no visir to save space
         filter(!is.na(visir)) %>% 
         fill(gid)
@@ -141,7 +114,7 @@ for(y in 1:length(YEARS)) {
     
   }
   bind_rows(res) %>%
-    write_rds(paste0("data/is_vms_visir", YEAR, ".rds"))
+    write_rds(paste0("data/is_vms_visir_y", YEAR, ".rds"))
 }
 
 devtools::session_info()
