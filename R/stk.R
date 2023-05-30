@@ -1,6 +1,6 @@
 # ------------------------------------------------------------------------------
 # run this as:
-#  nohup R < R/stk.R --vanilla > logs/stk_2023-05-26.log &
+#  nohup R < R/stk.R --vanilla > logs/stk_2023-05-29.log &
 
 library(tidyverse)
 library(lubridate)

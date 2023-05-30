@@ -1,6 +1,6 @@
 # How to run things ------------------------------------------------------------
 # run this as:
-#  nohup R < R/annexes.R --vanilla > logs/anexes_2023-05-26.log &
+#  nohup R < R/annexes.R --vanilla > logs/anexes_2023-05-29.log &
 lubridate::now()
 
 

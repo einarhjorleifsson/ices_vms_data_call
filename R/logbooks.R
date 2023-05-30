@@ -1,6 +1,6 @@
 # How to run things ------------------------------------------------------------
 # run this as:
-#  nohup R < R/logbooks.R --vanilla > logs/logbooks_2023-05-25.log &
+#  nohup R < R/logbooks.R --vanilla > logs/logbooks_2023-05-29.log &
 lubridate::now()
 
 # A brief outline --------------------------------------------------------------
@@ -207,37 +207,65 @@ LGS_old |>
   left_join(GEARS |> select(gid, veidarfaeri)) |> 
   knitr::kable(caption = "All gears: Number of records by gear")
 
+
 ## 1.2 New logbooks ------------------------------------------------------------
 # 2023-05-25: The new logbooks are in principle a total mess
 #             Here just some quick has is done for the ICES datacall
-
-# Do a complete R-data dump
-# mar::mar_views(con, "adb")
-# mar::mar_tables(con, "adb")
-n_trip <- tbl_mar(con, "adb.trip_v") |> collect(n = Inf)
-n_base  <- 
+# [cut]
+## 2023-05-29 Ignore above -----------------------------------------------------
+# the function flow results in slow excecution
+lb_trip_new <- function(con) {
+  tbl_mar(con, "adb.trip_v") |> 
+    select(trip_id, 
+           vid = vessel_no,
+           T1 = departure,
+           hid1 = departure_port_no,
+           T2 = landing,
+           hid2 = landing_port_no,
+           source)
+}
+lb_station_new0 <- function(con) {
   tbl_mar(con, "adb.station_v") |> 
+    select(trip_id,
+           station_id,
+           gid = gear_no,
+           t1 = fishing_start,
+           t2 = fishing_end,
+           lon = longitude,
+           lat = latitude,
+           lon2 = longitude_end,
+           lat2 = latitude_end,
+           z1 = depth,
+           z2 = depth_end,
+           tow_start,
+           everything())
+}
+lb_base_new <- function(con) {
+  lb_trip_new(con) |> 
+    inner_join(lb_station_new0(con) |> 
+                 select(trip_id:tow_start),
+               by = "trip_id") |> 
+    select(vid, gid, t1:tow_start, everything()) |> 
+    mutate(whack = case_when(between(lon, 10, 30) & between(lat, 62.5, 67.6) ~ "mirror",
+                             between(lon, -3, 3) & gid != 7 ~ "ghost",
+                             .default = "ok"),
+           lon = ifelse(whack == "mirror",
+                        -lon,
+                        lon),
+           lon2 = ifelse(whack == "mirror",
+                         -lon,
+                         lon))
+}
+
+n_base <- 
+  lb_base_new(con) |> 
+  filter(year(t1) %in% 2021:2022) |> 
   collect(n = Inf) |> 
-  left_join(n_trip |> 
-              select(trip_id, vid = vessel_no, datel = landing) |> 
-              distinct()) |> 
-  select(trip_id,
-         station_id,
-         vid,
-         gid = gear_no,
-         t1 = fishing_start,
-         t2 = fishing_end,
-         lon = longitude,
-         lat = latitude,
-         lon2 = longitude_end,
-         lat2 = latitude_end,
-         z1 = depth,
-         z2 = depth_end,
-         tow_start,
-         datel) |> 
+  select(vid:lat, trip_id, datel = T2, source:whack) |> 
   mutate(date = as_date(t1),
-         datel = as_date(datel)) |> 
-  filter(year(date) %in% 2021:2022)
+         datel = as_date(datel))
+
+
 # only data where the date fishing and vessels are not already in the old
 #  logbooks. This reduces the number of records from ~212 thousand to
 #  ~88 thousand
@@ -250,8 +278,19 @@ n_base <-
             multiple = "all") |> 
   filter(is.na(in.old)) |> 
   select(-in.old)
+# need to remove ghost-whacks
+n_base |> 
+  count(whack)
+n_base <-
+  n_base |> 
+  filter(whack %in% c("ok", "mirror")) |> 
+  select(-whack)
+# what are the sources
+n_base |> count(source)
+
 # sanity check, see if any abberrant trend in the number of sets by month
-bind_rows(
+p <-
+  bind_rows(
   LGS_old |> select(gid, date) |> mutate(what = "old"),
   n_base  |> select(gid, date) |> mutate(what = "new")) |> 
   left_join(GEARS_trim |> select(gid, gclass)) |> 
@@ -261,7 +300,11 @@ bind_rows(
   ggplot(aes(date, n)) +
   geom_point() +
   facet_wrap(~ gclass, scales = "free_y")
+p
 
+
+# 2023-05-29: There are lot of orphan sub-information, becomes apparent if on
+#             uses inner_join below
 n_mobile <- 
   n_base |> 
   inner_join(
@@ -273,7 +316,8 @@ n_mobile <-
          effort_unit = case_when(gid %in% c(6, 7) ~ "hours towed",
                                  gid %in% 5  ~  "setting",
                                  .default = NA)) |> 
-  rename(sweeps = bridle_length)
+  rename(sweeps = bridle_length) |> 
+  select(station_id, sweeps, effort, effort_unit)
 n_static <- 
   n_base |> 
   inner_join(
@@ -288,12 +332,8 @@ n_static <-
                                  gid %in% c(2, 11, 25, 29, 91, 92) ~ "netnights",
                                  gid %in% 1 ~ "hooks",
                                  .default = NA)) |> 
-  # missing effort, use median
-  group_by(gid) |> 
-  mutate(tmp_median = median(effort, na.rm = TRUE),
-         effort = ifelse(is.na(effort), tmp_median, effort)) |> 
-  ungroup() |> 
-  select(-tmp_median)
+  select(station_id, effort, effort_unit)
+
 n_dredge <- 
   n_base |> 
   inner_join(
@@ -301,7 +341,8 @@ n_dredge <-
   ) |> 
   mutate(effort = as.numeric(difftime(t2, t1, units = "hours")),
          effort_unit = "hours towed",
-         plow_width = 2)
+         plow_width = 2) |> 
+  select(station_id, plow_width, effort, effort_unit)
 n_trap <- 
   n_base |> 
   inner_join(
@@ -309,7 +350,8 @@ n_trap <-
   ) |> 
   mutate(dt = as.numeric(difftime(t2, t1, units = "hours")),
          effort = dt * number_of_traps,
-         effort_unit = "trap hours")
+         effort_unit = "trap hours") |> 
+  select(station_id, effort, effort_unit)
 
 n_seine <- 
   n_base |> 
@@ -317,19 +359,33 @@ n_seine <-
     tbl_mar(con, "adb.surrounding_net_v") |> collect(n = Inf)
   ) |> 
   mutate(effort = 1,
-         effort_unit = "settings")
+         effort_unit = "settings") |> 
+  select(station_id, effort, effort_unit)
 
 # sanity check - am i missing settings when using inner_join above
-tmp <- 
+n_base_aux <- 
   bind_rows(n_mobile,
             n_static,
             n_dredge,
             n_trap,
             n_seine)
+nrow(n_base)
+nrow(n_base_aux)
+
+n_base <-
+  n_base |> 
+  left_join(n_base_aux |>
+              mutate(orphan = "no")) |> 
+  mutate(orphan = replace_na(orphan, "yes"))
+n_base |> 
+  count(gid, orphan) |> 
+  spread(orphan, n)
+
 # repeat sanity check, see if any abberrant trend in the number of sets by month
 bind_rows(
   LGS_old |> select(gid, date) |> mutate(what = "old"),
-  tmp  |> select(gid, date) |> mutate(what = "new")) |> 
+  n_base  |> 
+    select(gid, date) |> mutate(what = "new")) |> 
   left_join(GEARS_trim |> select(gid, gclass)) |> 
   mutate(date = floor_date(date, "month")) |> 
   count(date, gclass) |> 
@@ -338,44 +394,51 @@ bind_rows(
   geom_point() +
   facet_wrap(~ gclass, scales = "free_y")
 
-n_base |> 
-  left_join(tmp |> select(station_id) |> mutate(in.details = TRUE)) |> 
-  filter(is.na(in.details)) |> 
-  count(gid)
+
+lb_catch_new <- function(con) {
+  tbl_mar(con, "adb.catch") |> 
+    mutate(catch = case_when(condition == "GUTT" ~ quantity / 0.8,
+                             condition == "UNGU" ~ quantity,
+                             .default = NA)) |> 
+    select(station_id = fishing_station_id,
+           sid = species_no, 
+           catch, 
+           weight, 
+           quantity, 
+           condition, 
+           catch_type = source_type)
+}
+
+
+lb_catch_new(con) |> count(catch_type)
 
 n_catch <- 
   n_base |> 
   select(station_id) |> 
-  left_join(tbl_mar(con, "adb.catch_v") |> 
+  left_join(lb_catch_new(con) |> 
+              filter(catch_type == "CATC") |> 
+              select(station_id, sid, catch) |> 
               collect(n = Inf) |> 
-              select(station_id, species_no, weight) |> 
-              mutate(weight = replace_na(weight, 0)) |> 
-              arrange(station_id, desc(weight), species_no) %>%
+              arrange(station_id, desc(catch), sid) %>%
               group_by(station_id) %>%
-              mutate(total = sum(weight),
-                     p = weight / total,
+              mutate(total = sum(catch),
+                     p = catch / total,
                      total = total / 1e3,
                      n.sid = n()) %>%
               ungroup() |>
               group_by(station_id) %>%
               slice(1) %>%
-              ungroup() %>% 
-              rename(sid.target = species_no))
+              ungroup()) |> 
+  select(-catch) |> 
+  mutate(total = replace_na(total, 0))
+
 
 LGS_new <-
-  bind_rows(n_mobile,
-            n_static,
-            n_dredge,
-            n_trap,
-            n_seine) |> 
-  select(trip_id:date, sweeps, effort, effort_unit) |> 
-  left_join(n_catch) |> 
-  select(station_id:date, effort, effort_unit)
-
-cn_old <- names(LGS_old)
+  n_base |> 
+  left_join(n_catch)
 
 LGS <- 
-  bind_rows(LGS_old |> mutate(base = "old"),
+  bind_rows(LGS_old |> mutate(base = "old", visir_org = visir),
             LGS_new |> mutate(base = "new")) |> 
   # NEW VISIR
   mutate(visir = 1:n())
