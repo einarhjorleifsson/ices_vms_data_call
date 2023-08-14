@@ -1,6 +1,6 @@
 # How to run things ------------------------------------------------------------
 # run this as:
-#  nohup R < R/annexes.R --vanilla > logs/anexes_2023-05-29.log &
+#  nohup R < R/annexes.R --vanilla > logs/anexes_2023-06-04.log &
 lubridate::now()
 
 
@@ -44,7 +44,7 @@ YEARS <- 2022:2009
 # Get the values accepted in this vocabulary dataset
 vlen_ices <- getCodeList("VesselLengthClass") ### Get DATSU Vocabulary list for selected dataset
 # Filter values that aren't deprecated, overlapped  or not accepted by data call requirements
-vlen_icesc <-  vlen_ices %>% slice(2, 4, 6, 7, 8, 10, 11, 12, 13 )%>%select(Key)
+vlen_icesc <-  vlen_ices %>% slice(2, 4, 6, 7, 8, 10, 11, 12, 13 )%>% select(Key)
 
 LGSc <- 
   read_rds("data/logbooks.rds") %>% 
@@ -300,6 +300,27 @@ annex1 <-
   mutate(vids = ifelse(is.na(vids), "-9", vids)) %>% 
   # 2022-04-27: Seems like this is no longer required, see 3_data_submission.R
   select(-c(lowermeshsize, uppermeshsize))
+
+# 2023-06-01: Put median estimate of ping frequency where missing (apparently 
+#             can not be NA)
+annex1 <- 
+  annex1 |> 
+  group_by(csquare) |> 
+  mutate(m = median(dt, na.rm = TRUE),
+         dt = ifelse(is.na(dt), m, dt)) |> 
+  ungroup() |> 
+  select(-m) |> 
+  mutate(dt = replace_na(dt, 11))
+
+# 2023-06-01: gear width of zero should not be allowed, replace with median
+annex1 <- 
+  annex1 |> 
+  group_by(m4) |> 
+  mutate(m = median(spread, na.rm = TRUE)) |> 
+  ungroup() |> 
+  mutate(spread = case_when(m4 %in% c("DRB", "OTB", "OTM", "SND") & is.na(spread) ~ m,
+                            .default = spread)) |> 
+  select(-m)
 
 
 if(EXPORT) {
