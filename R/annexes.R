@@ -1,6 +1,6 @@
 # How to run things ------------------------------------------------------------
 # run this as:
-#  nohup R < R/annexes.R --vanilla > logs/anexes_2023-06-04.log &
+#  nohup R < R/annexes.R --vanilla > logs/anexes_2023-08-14.log &
 lubridate::now()
 
 
@@ -44,7 +44,12 @@ YEARS <- 2022:2009
 # Get the values accepted in this vocabulary dataset
 vlen_ices <- getCodeList("VesselLengthClass") ### Get DATSU Vocabulary list for selected dataset
 # Filter values that aren't deprecated, overlapped  or not accepted by data call requirements
-vlen_icesc <-  vlen_ices %>% slice(2, 4, 6, 7, 8, 10, 11, 12, 13 )%>% select(Key)
+vlen_icesc <-
+  vlen_ices %>%
+  # 2023-08-14: changed in accordance with this: https://github.com/ices-eg/ICES-VMS-and-Logbook-Data-Call/blob/main/3_data_submission.R
+  filter ( Key %in% c("VL0006", "VL0608", "VL0810", "VL1012", "VL1215" ,"VL1518", "VL1824" ,"VL2440" ,"VL40XX"))%>%
+  select(Key)%>%
+  arrange(Key)
 
 LGSc <- 
   read_rds("data/logbooks.rds") %>% 
