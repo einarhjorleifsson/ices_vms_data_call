@@ -1,6 +1,7 @@
 # How to run things ------------------------------------------------------------
 # run this as:
 #  nohup R < R/annexes.R --vanilla > logs/anexes_2023-08-14.log &
+
 lubridate::now()
 
 
@@ -50,6 +51,7 @@ vlen_icesc <-
   filter ( Key %in% c("VL0006", "VL0608", "VL0810", "VL1012", "VL1215" ,"VL1518", "VL1824" ,"VL2440" ,"VL40XX"))%>%
   select(Key)%>%
   arrange(Key)
+
 
 LGSc <- 
   read_rds("data/logbooks.rds") %>% 
