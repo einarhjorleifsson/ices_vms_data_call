@@ -14,6 +14,61 @@ EXPORT <- TRUE
 TODAY <- today() %>% as.character()
 
 if(FALSE) {
+  an2 <-
+    # 2023-09-15
+    # this was part of the code delivery submitted 2023-08-14
+    #  comments made that the max interval was very high
+    #  it is an artefact of the algorithm upstream, only associated
+    #  with records were only 1 vessel was recorded in a annex2 record
+    #  this issue needs to be checked for the 2024 datacall
+    #  here a cap was put on the interval to 60 minutes
+    read_ve <- function(file) {
+      
+      read.csv(file,
+               header = FALSE,
+               na.strings = "NULL") %>% 
+        tidyr::as_tibble() %>% 
+        dplyr::rename(type = 1,
+                      country = 2,
+                      year = 3,
+                      month = 4,
+                      n_vessel = 5,
+                      vids = 6,
+                      csq = 7,
+                      dcf4 = 8,
+                      dcf5 = 9,
+                      dcf6 = 10,
+                      lclass = 11,
+                      speed = 12,
+                      effort = 13,             # units in hours
+                      int = 14,                # average interval
+                      length = 15,             # average vessel length
+                      kw = 16,                 # average kw
+                      kwh = 17,                # kw x effort
+                      catch = 18,
+                      value = 19,
+                      gearwidth = 20) %>%
+        #                  spread = 21) %>% 
+        dplyr::mutate(value = as.numeric(value))
+    }
+  an1 <- 
+    read_ve("delivery/iceland_annex1_2009_2022_2023-08-14.csv") |> 
+    mutate(int = ifelse(int > 120, 120, int))
+  knitr::kable(do.call(rbind, tapply(an1$int, an1$year, summary)), booktabs = TRUE,
+          caption = "Summary statistics of average ping interval")
+  ggplot(an1, aes(x = int)) +
+    geom_histogram() +
+    #scale_x_log10() +
+    labs(x = "Average ping interval", y = "Count") +
+    facet_wrap( ~ year, ncol = 2)
+  an1 %>%
+    write_csv("iceland_annex1_2009_2022_2023-09-15.csv",
+              na = "",
+              col_names = FALSE)
+  
+}
+
+if(FALSE) {
   an2 <- 
     # this was part of the code delivery submitted 2022-06-09
     #  problem is that read_le generates lon and lat from csquare

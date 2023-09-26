@@ -1,0 +1,544 @@
+
+R version 4.2.2 (2022-10-31) -- "Innocent and Trusting"
+Copyright (C) 2022 The R Foundation for Statistical Computing
+Platform: x86_64-pc-linux-gnu (64-bit)
+
+R is free software and comes with ABSOLUTELY NO WARRANTY.
+You are welcome to redistribute it under certain conditions.
+Type 'license()' or 'licence()' for distribution details.
+
+R is a collaborative project with many contributors.
+Type 'contributors()' for more information and
+'citation()' on how to cite R or R packages in publications.
+
+Type 'demo()' for some demos, 'help()' for on-line help, or
+'help.start()' for an HTML browser interface to help.
+Type 'q()' to quit R.
+
+> # How to run things ------------------------------------------------------------
+> # run this as:
+> #  nohup R < R/annexes.R --vanilla > logs/anexes_2023-08-14.log &
+> lubridate::now()
+[1] "2023-08-14 19:34:12 GMT"
+> 
+> 
+> library(sf)
+Linking to GEOS 3.9.0, GDAL 3.2.2, PROJ 7.2.1; sf_use_s2() is TRUE
+> library(lubridate)
+
+Attaching package: ‘lubridate’
+
+The following objects are masked from ‘package:base’:
+
+    date, intersect, setdiff, union
+
+> library(tidyverse)
+── Attaching core tidyverse packages ──────────────────────── tidyverse 2.0.0 ──
+✔ dplyr   1.1.2     ✔ readr   2.1.4
+✔ forcats 1.0.0     ✔ stringr 1.5.0
+✔ ggplot2 3.4.2     ✔ tibble  3.2.1
+✔ purrr   1.0.1     ✔ tidyr   1.3.0
+── Conflicts ────────────────────────────────────────── tidyverse_conflicts() ──
+✖ dplyr::filter() masks stats::filter()
+✖ dplyr::lag()    masks stats::lag()
+ℹ Use the conflicted package (<http://conflicted.r-lib.org/>) to force all conflicts to become errors
+> library(icesVocab)
+> source("R/functions.R")
+> EXPORT <- TRUE
+> TODAY <- today() %>% as.character()
+> 
+> if(FALSE) {
++   an2 <- 
++     # this was part of the code delivery submitted 2022-06-09
++     #  problem is that read_le generates lon and lat from csquare
++     #  read_le("delivery/iceland_annex2_2009_2021_2022-04-30.csv")
++     read.csv("delivery/iceland_annex2_2009_2021_2022-04-30.csv",
++              header = FALSE,
++              na.strings = "NULL")
++   an2 %>%
++     # the catch column
++     mutate(V15 = V15 * 1e3) %>% 
++     write_csv(paste0("delivery/iceland_annex2_2009_2021_", TODAY, ".csv"),
++               na = "",
++               col_names = FALSE)
++   an1 <- 
++     read_ve("delivery/iceland_annex1_2009_2021_2022-04-30.csv")
++   an1 %>%
++     mutate(catch = catch * 1e3) %>% 
++     write_csv(paste0("delivery/iceland_annex1_2009_2021_", TODAY, ".csv"),
++               na = "",
++               col_names = FALSE)
++   
++ }
+> 
+> 
+> sq <- read_sf("ftp://ftp.hafro.is/pub/data/shapes/ices_rectangles.gpkg")
+> 
+> YEARS <- 2022:2009
+> 
+> # Get the values accepted in this vocabulary dataset
+> vlen_ices <- getCodeList("VesselLengthClass") ### Get DATSU Vocabulary list for selected dataset
+> # Filter values that aren't deprecated, overlapped  or not accepted by data call requirements
+> vlen_icesc <-
++   vlen_ices %>%
++   # changed in accordance with this: https://github.com/ices-eg/ICES-VMS-and-Logbook-Data-Call/blob/main/3_data_submission.R
++   filter ( Key %in% c("VL0006", "VL0608", "VL0810", "VL1012", "VL1215" ,"VL1518", "VL1824" ,"VL2440" ,"VL40XX"))%>%
++   select(Key)%>%
++   arrange(Key)
+> 
+> LGSc <- 
++   read_rds("data/logbooks.rds") %>% 
++   mutate(month = month(date)) |> 
++   # fix upstream, or better still delete upstream
++   mutate(month = ifelse(is.na(month), month(date), month)) %>%
++   # 2022-04-30 Length class code changed, again!
++   mutate(length_class = cut(length,
++                             breaks=c(0, 6, 8, 10, 12, 15, 18, 24, 40, 'inf' ), 
++                             right = FALSE    ,
++                             include.lowest = TRUE,
++                             labels =  vlen_icesc$Key))
+> 
+> 
+> # Annex 2 - logbooks -----------------------------------------------------------
+> 
+> twovessels <-
++   LGSc %>%
++   select(year, month, ices, m4, m5, m6, length_class, vid0) %>%
++   distinct() %>%
++   group_by(year, month, ices, m4, m6, length_class) %>%
++   mutate(n_vessel = n_distinct(vid0)) %>%
++   ungroup() %>%
++   filter(n_vessel %in% 1:2) %>%
++   group_by(year, month, ices, m4, m6, length_class) %>%
++   mutate(vids = case_when(n_vessel == 1 ~ vid0,
++                           n_vessel == 2 ~ paste0(vid0, ";", lead(vid0)))) %>%
++   slice(1) %>%
++   ungroup() %>% 
++   select(-vid0)
+> 
+> annex2 <-
++   LGSc %>%
++   # First for each vessel
++   # 2021-05-11: There was a problem here with the derivation of FishingDays
++   #             because a vessel can be in more than one ICES square within
++   #             a day. This leads to overestimation of effort.
++   #             The solution is to first split a fishing day into each 
++   #             activity as a fraction.
++   group_by(vid, date) %>% 
++   mutate(pdays = 1 / n()) %>% 
++   ungroup() %>% 
++   group_by(year, month, ices, m4, m5, m6, length_class, vid) %>%
++   # 2021-05-11: Here sum fraction of fishing days, not n_distinct(date)
++   summarise(FishingDays = sum(pdays),
++             kwdays = sum(FishingDays * kw),
++             catch = sum(total),
++             .groups = "drop") %>%
++   # then just summarise over vessels
++   group_by(year, month, ices, m4, m5, m6, length_class) %>%
++   summarise(n_vessel = n_distinct(vid),
++             FishingDays = sum(FishingDays),
++             kwdays = sum(kwdays),
++             catch = sum(catch),
++             .groups = "drop") %>%
++   ungroup() %>% 
++   left_join(twovessels) %>% 
++   mutate(type = "LE",
++          country = "IS",
++          vms = "Y",
++          value = NA_real_,
++          lowermeshsize = NA,
++          uppermeshsize = NA) %>% 
++   # CHECK with datacall where lower/uppermeshsize is in the order of things
++   select(type, country, year, month, n_vessel, vids, ices, m4, m5, 
++          lowermeshsize, uppermeshsize,
++          m6, length_class,
++          vms, FishingDays, kwdays, catch, value)
+Joining with `by = join_by(year, month, ices, m4, m5, m6, length_class,
+n_vessel)`
+> 
+> annex2 <- 
++   annex2 %>% 
++   filter(ices %in% sq$icesname)
+> 
+> annex2 <- 
++   annex2 %>% 
++   mutate(vids = ifelse(is.na(vids), "-9", vids)) %>% 
++   # 2022-04-27: Seems like this is no longer required, see 3_data_submission.R
++   select(-c(lowermeshsize, uppermeshsize))
+> 
+> if(EXPORT) {
++   annex2 %>%
++     write_csv(paste0("delivery/iceland_annex2_2009_2022_", TODAY, ".csv"),
++               na = "",
++               col_names = FALSE)
++   annex2 %>% 
++     write_rds(paste0("data/iceland_annex2_2009_2022_", TODAY, ".rds"))
++   
++ }
+> 
+> # end: Annex 2 - logbooks
+> 
+> 
+> # Annex 1 - ais/vms ------------------------------------------------------------
+> speed.criterion <-
++   tribble(~gid,  ~s1,  ~s2,
++           -199, 1.000, 3.000,
++           1,    0.375, 2.750,
++           2,    0.125, 2.500,
++           3,    0.025, 2.000,
++           5,    0.250, 3.250,
++           6,    2.625, 5.500,
++           7,    2.625, 6.000,
++           9,    2.375, 4.000,
++           12,    0.050, 2.250,
++           14,    1.750, 3.250,
++           15,    0.500, 5.500,
++           38,    0.250, 4.750,
++           40,    0.250, 6.000)
+> 
+> fil <- paste0("data/is_vms_visir_y", YEARS, ".rds")
+> res <- list()
+> for(y in 1:length(YEARS)) {
++   
++   print(YEARS[y])
++   
++   res[[y]] <- 
++     read_rds(fil[y]) %>%
++     # 2021-08-17: If no speed reported that is most likely associated with
++     #             beginning or end of trips (read days). Should fix this upstream.
++     filter(!is.na(speed) & !is.na(lat) & !is.na(lon)) %>% 
++     # 2021-08-17: In the delivery in May 2021 af filter was applied excluding
++     #             the extrapolated datapoints [  filter(vms)   ]. This caused
++     #             problems downstream in the calculation of effort (each
++     #             ping was supposed to represent a minute, which it no longer
++     #             true once a filter has been applied.
++     #             A remedy would be to first count the number of pings above
++     #             a speed threshold within a visir (each being a minute) and
++     #             then filter the points.
++     #             The reason one wants to filter points is that one often gets
++     #             wrong extrapolations. So on the TODO list is to create an
++     #             algorithm right upstream that takes care of "wacky" points
++   #filter(vms) %>% 2021-08-17: Used in the May 2021 delivery
++   left_join(speed.criterion,
++             by = "gid") %>% 
++     mutate(fishing = ifelse(speed >= s1 & speed <= s2, TRUE, FALSE)) %>% 
++     group_by(visir) %>% 
++     mutate(effort = sum(fishing)) %>% # units are minutes
++     ungroup() %>% 
++     # 2021-08-17: Now we apply the filters on both the vms and the speed
++     filter(speed >= s1 & speed <= s2 & vms == TRUE) %>% 
++     group_by(visir) %>% 
++     mutate(effort = effort / n()) %>% # Here we finally spread the effort among pings
++     ungroup()
++   
++ }
+[1] 2022
+[1] 2021
+[1] 2020
+[1] 2019
+[1] 2018
+[1] 2017
+[1] 2016
+[1] 2015
+[1] 2014
+[1] 2013
+[1] 2012
+[1] 2011
+[1] 2010
+[1] 2009
+> ais <- 
++   bind_rows(res) %>% 
++   # don't think i need gear here
++   select(vid, visir:speed, effort) %>% 
++   group_by(visir) %>%
++   # each ping is a minute
++   # 2021-08-10: In the delivery in May 2021 this number was then summed again
++   #             downstream. However, the purpose of this calculation is only
++   #             to calculate a statistics for spreading the catches of an 
++   #             fishing activity to each ping.
++   mutate(n.pings.per.visir = n()) %>%
++   # 2023-05-21 Ping interval
++   mutate(dt = difftime(lead(time), time, units = "mins") |> as.numeric(),
++          dt = replace_na(dt, mean(dt, na.rm = TRUE))) |> 
++   ungroup()
+> n0.ais <- nrow(ais)
+> rm(res)
+> 
+> LGS <- 
++   read_rds("data/logbooks.rds") %>% 
++   mutate(m4 = ifelse(m4 == "GSN", "GNS", m4),
++          m5 = str_sub(m6, 5, 7)) %>% 
++   # 2022-04-30 Length class code changed, again!
++   mutate(length_class = cut(length,
++                             breaks=c(0, 6, 8, 10, 12, 15, 18, 24, 40, 'inf' ), 
++                             right = FALSE    ,
++                             include.lowest = TRUE,
++                                         labels =  vlen_icesc$Key))
+> 
+> ais <- 
++   ais %>% 
++   left_join(LGS %>%
++               select(visir, vid0, gid, catch = total, gear.width, length, length_class, kw, m4, m5, m6)) %>%
++   mutate(catch = catch / n.pings.per.visir,
++          #towtime = towtime / n.pings,
++          csquare = vmstools::CSquare(lon, lat, 0.05))
+Joining with `by = join_by(visir)`
+The legacy packages maptools, rgdal, and rgeos, underpinning the sp package,
+which was just loaded, will retire in October 2023.
+Please refer to R-spatial evolution reports for details, especially
+https://r-spatial.org/r/2023/05/15/evolution4.html.
+It may be desirable to make the sf package available;
+package maintainers should consider adding sf to Suggests:.
+The sp package is now running under evolution status 2
+     (status 2 uses the sf package in place of rgdal)
+Please note that 'maptools' will be retired during October 2023,
+plan transition at your earliest convenience (see
+https://r-spatial.org/r/2023/05/15/evolution4.html and earlier blogs
+for guidance);some functionality will be moved to 'sp'.
+ Checking rgeos availability: TRUE
+> n1.ais_lgs.merged <- nrow(ais)
+> print(c(n0.ais, n1.ais_lgs.merged))
+[1] 48600489 48600489
+> 
+> ais <- 
++   ais %>% 
++   filter(lat > 48) %>%
++   # get rid of points on greenland
++   filter(!(lat > 69.5 & lon < -19)) %>% 
++   # get rid of points in sweden & finland 
++   filter(!(lon > 18.5 & lat <= 69)) %>% 
++   # get rid of points in norway
++   filter(!(lon >= 5 & lat <= 66)) %>% 
++   mutate(year = year(time),
++          month = month(time))
+> n2.ais.filtered <- nrow(ais)
+> print(c(n0.ais, n2.ais.filtered))
+[1] 48600489 48600452
+> #ais %>% write_rds("data/is_vms_2009-2020-speed_filter_lgs-merged.rds")
+> twovessels <-
++   ais %>%
++   select(year, month, csquare, m4, m5, m6, length_class, vid0) %>%
++   distinct() %>%
++   group_by(year, month, csquare, m4, m5, m6, length_class) %>%
++   mutate(n_vessel = n_distinct(vid0)) %>%
++   ungroup() %>%
++   filter(n_vessel %in% 1:2) %>%
++   group_by(year, month, csquare, m4, m6, length_class) %>%
++   mutate(vids = case_when(n_vessel == 1 ~ vid0,
++                           n_vessel == 2 ~ paste0(vid0, ";", lead(vid0)))) %>%
++   slice(1) %>%
++   ungroup() %>% 
++   select(-vid0)
+> annex1 <-
++   ais %>%
++   group_by(year, month, csquare, m4, m5, m6, length_class) %>%
++   summarise(speed  = mean(speed),
++             # 2023-05-21  Ping interval
++             dt = mean(dt),
++             # 2021-08-10: The line below was used to derive effort for the data
++             #             delivered in May 2021. However this is TOTALLY wrong
++             #             because the n.pings is already the sum of the pings
++             #             per fishing activity (visir).
++             #time   = sum(n.pings) / 60,  # hours
++             # 2021-08-10: Corrected effort statistics
++             effort = sum(effort) / 60,    # units in hours
++             length = mean(length),
++             kw     = mean(kw),
++             kwh    = kw * effort,
++             catch  = sum(catch),
++             spread = mean(gear.width),
++             n_vessel = n_distinct(vid),
++             .groups = "drop")
+> n.annex1 <- nrow(annex1)
+> 
+> 
+> annex1 <- 
++   annex1 %>% 
++   left_join(twovessels) %>% 
++   mutate(type = "VE",
++          country = "IS",
++          value = NA,
++          lowermeshsize = NA,
++          uppermeshsize = NA) %>% 
++   select(type, country, year, month, n_vessel, vids, csquare,
++          m4, m5, lowermeshsize, uppermeshsize, m6,
++          length_class, 
++          # 2023-05-21 add the dt
++          speed, effort, dt, length, kw, kwh, catch, value, spread)
+Joining with `by = join_by(year, month, csquare, m4, m5, m6, length_class,
+n_vessel)`
+> print(c(n.annex1, nrow(annex1)))
+[1] 2233758 2233758
+> 
+> annex1 <- 
++   annex1 %>% 
++   mutate(vids = ifelse(is.na(vids), "-9", vids)) %>% 
++   # 2022-04-27: Seems like this is no longer required, see 3_data_submission.R
++   select(-c(lowermeshsize, uppermeshsize))
+> 
+> # 2023-06-01: Put median estimate of ping frequency where missing (apparently 
+> #             can not be NA)
+> annex1 <- 
++   annex1 |> 
++   group_by(csquare) |> 
++   mutate(m = median(dt, na.rm = TRUE),
++          dt = ifelse(is.na(dt), m, dt)) |> 
++   ungroup() |> 
++   select(-m) |> 
++   mutate(dt = replace_na(dt, 11))
+> 
+> # 2023-06-01: gear width of zero should not be allowed, replace with median
+> annex1 <- 
++   annex1 |> 
++   group_by(m4) |> 
++   mutate(m = median(spread, na.rm = TRUE)) |> 
++   ungroup() |> 
++   mutate(spread = case_when(m4 %in% c("DRB", "OTB", "OTM", "SND") & is.na(spread) ~ m,
++                             .default = spread)) |> 
++   select(-m)
+> 
+> 
+> if(EXPORT) {
++   annex1 %>% 
++     write_csv(paste0("delivery/iceland_annex1_2009_2022_", TODAY, ".csv"),
++               na = "", 
++               col_names = FALSE)
++   annex1 %>% 
++     write_rds(paste0("data/iceland_annex1_2009_2022_", TODAY, ".rds"))
++ }
+> 
+> 
+> 
+> table(annex1$year, useNA = "ifany")
+
+  2009   2010   2011   2012   2013   2014   2015   2016   2017   2018   2019 
+165538 174486 174670 172697 181255 173138 161068 163904 147615 157426 152197 
+  2020   2021   2022 
+139557 144839 125368 
+> 
+> devtools::session_info()
+─ Session info ───────────────────────────────────────────────────────────────
+ setting  value
+ version  R version 4.2.2 (2022-10-31)
+ os       Debian GNU/Linux 11 (bullseye)
+ system   x86_64, linux-gnu
+ ui       X11
+ language (EN)
+ collate  is_IS.UTF-8
+ ctype    is_IS.UTF-8
+ tz       Atlantic/Reykjavik
+ date     2023-08-14
+ pandoc   2.9.2.1 @ /usr/bin/pandoc
+
+─ Packages ───────────────────────────────────────────────────────────────────
+ package        * version    date (UTC) lib source
+ backports        1.4.1      2021-12-13 [1] CRAN (R 4.2.2)
+ bit              4.0.5      2022-11-15 [1] CRAN (R 4.2.2)
+ bit64            4.0.5      2020-08-30 [1] CRAN (R 4.2.2)
+ broom            1.0.5.9000 2023-06-16 [1] Github (tidymodels/broom@c0477a9)
+ cachem           1.0.8      2023-05-01 [1] CRAN (R 4.2.2)
+ callr            3.7.3      2022-11-02 [1] CRAN (R 4.2.2)
+ class            7.3-20     2022-01-13 [3] CRAN (R 4.2.2)
+ classInt         0.4-9      2023-02-28 [1] CRAN (R 4.2.2)
+ cli              3.6.1      2023-03-23 [1] CRAN (R 4.2.2)
+ cluster          2.1.4      2022-08-22 [3] CRAN (R 4.2.2)
+ colorspace       2.1-0      2023-01-23 [1] CRAN (R 4.2.2)
+ crayon           1.5.2      2022-09-29 [1] CRAN (R 4.2.2)
+ curl             5.0.1      2023-06-07 [1] CRAN (R 4.2.2)
+ data.table       1.14.8     2023-02-17 [1] CRAN (R 4.2.2)
+ DBI              1.1.3      2022-06-18 [1] CRAN (R 4.2.2)
+ Deriv            4.1.3      2021-02-24 [1] CRAN (R 4.2.2)
+ devtools         2.4.5      2022-10-11 [1] CRAN (R 4.2.2)
+ digest           0.6.33     2023-07-07 [1] CRAN (R 4.2.2)
+ doBy             4.6.17     2023-07-12 [1] CRAN (R 4.2.2)
+ dplyr          * 1.1.2      2023-04-20 [1] CRAN (R 4.2.2)
+ e1071            1.7-13     2023-02-01 [1] CRAN (R 4.2.2)
+ ellipsis         0.3.2      2021-04-29 [1] CRAN (R 4.2.2)
+ fansi            1.0.4      2023-01-22 [1] CRAN (R 4.2.2)
+ fastmap          1.1.1      2023-02-24 [1] CRAN (R 4.2.2)
+ forcats        * 1.0.0      2023-01-29 [1] CRAN (R 4.2.2)
+ foreign          0.8-84     2022-12-06 [1] CRAN (R 4.2.2)
+ fs               1.6.3      2023-07-20 [1] CRAN (R 4.2.2)
+ generics         0.1.3      2022-07-05 [1] CRAN (R 4.2.2)
+ ggplot2        * 3.4.2      2023-04-03 [1] CRAN (R 4.2.2)
+ glue             1.6.2      2022-02-24 [1] CRAN (R 4.2.2)
+ gtable           0.3.3      2023-03-21 [1] CRAN (R 4.2.2)
+ hms              1.1.3      2023-03-21 [1] CRAN (R 4.2.2)
+ htmltools        0.5.5      2023-03-23 [1] CRAN (R 4.2.2)
+ htmlwidgets      1.6.2      2023-03-17 [1] CRAN (R 4.2.2)
+ httpuv           1.6.11     2023-05-11 [1] CRAN (R 4.2.2)
+ httr             1.4.6      2023-05-08 [1] CRAN (R 4.2.2)
+ icesVocab      * 1.2.0      2022-02-10 [1] CRAN (R 4.2.2)
+ jsonlite         1.8.7      2023-06-29 [1] CRAN (R 4.2.2)
+ kernlab          0.9-32     2023-01-31 [1] CRAN (R 4.2.2)
+ KernSmooth       2.23-20    2021-05-03 [3] CRAN (R 4.2.2)
+ later            1.3.1      2023-05-02 [1] CRAN (R 4.2.2)
+ lattice          0.20-45    2021-09-22 [3] CRAN (R 4.2.1)
+ lazyeval         0.2.2      2019-03-15 [1] CRAN (R 4.2.2)
+ lifecycle        1.0.3      2022-10-07 [1] CRAN (R 4.2.2)
+ lubridate      * 1.9.2      2023-02-10 [1] CRAN (R 4.2.2)
+ magrittr         2.0.3      2022-03-30 [1] CRAN (R 4.2.2)
+ mapdata          2.3.1      2022-11-01 [1] CRAN (R 4.2.2)
+ maps             3.4.1      2022-10-30 [1] CRAN (R 4.2.2)
+ maptools         1.1-8      2023-07-18 [1] CRAN (R 4.2.2)
+ MASS             7.3-58.1   2022-08-03 [3] CRAN (R 4.2.2)
+ Matrix           1.4-1      2022-03-23 [3] CRAN (R 4.2.1)
+ memoise          2.0.1      2021-11-26 [1] CRAN (R 4.2.2)
+ microbenchmark   1.4.10     2023-04-28 [1] CRAN (R 4.2.2)
+ mime             0.12       2021-09-28 [1] CRAN (R 4.2.2)
+ miniUI           0.1.1.1    2018-05-18 [1] CRAN (R 4.2.2)
+ mixtools         2.0.0      2022-12-05 [1] CRAN (R 4.2.2)
+ munsell          0.5.0      2018-06-12 [1] CRAN (R 4.2.2)
+ nlme             3.1-160    2022-10-10 [3] CRAN (R 4.2.2)
+ PBSmapping       2.73.2     2022-09-07 [1] CRAN (R 4.2.2)
+ pillar           1.9.0      2023-03-22 [1] CRAN (R 4.2.2)
+ pkgbuild         1.4.2      2023-06-26 [1] CRAN (R 4.2.2)
+ pkgconfig        2.0.3      2019-09-22 [1] CRAN (R 4.2.2)
+ pkgload          1.3.2.1    2023-07-08 [1] CRAN (R 4.2.2)
+ plotly           4.10.2     2023-06-03 [1] CRAN (R 4.2.2)
+ prettyunits      1.1.1      2020-01-24 [1] CRAN (R 4.2.2)
+ processx         3.8.2      2023-06-30 [1] CRAN (R 4.2.2)
+ profvis          0.3.8      2023-05-02 [1] CRAN (R 4.2.2)
+ promises         1.2.0.1    2021-02-11 [1] CRAN (R 4.2.2)
+ proxy            0.4-27     2022-06-09 [1] CRAN (R 4.2.2)
+ ps               1.7.5      2023-04-18 [1] CRAN (R 4.2.2)
+ purrr          * 1.0.1      2023-01-10 [1] CRAN (R 4.2.2)
+ R6               2.5.1      2021-08-19 [1] CRAN (R 4.2.2)
+ Rcpp             1.0.11     2023-07-06 [1] CRAN (R 4.2.2)
+ readr          * 2.1.4      2023-02-10 [1] CRAN (R 4.2.2)
+ remotes          2.4.2.1    2023-07-18 [1] CRAN (R 4.2.2)
+ rlang            1.1.1      2023-04-28 [1] CRAN (R 4.2.2)
+ rstudioapi       0.15.0     2023-07-07 [1] CRAN (R 4.2.2)
+ scales           1.2.1      2022-08-20 [1] CRAN (R 4.2.2)
+ segmented        1.6-4      2023-04-13 [1] CRAN (R 4.2.2)
+ sessioninfo      1.2.2      2021-12-06 [1] CRAN (R 4.2.2)
+ sf             * 1.0-14     2023-07-11 [1] CRAN (R 4.2.2)
+ shiny            1.7.4.1    2023-07-06 [1] CRAN (R 4.2.2)
+ sp               2.0-0      2023-06-22 [1] CRAN (R 4.2.2)
+ stringi          1.7.12     2023-01-11 [1] CRAN (R 4.2.2)
+ stringr        * 1.5.0      2022-12-02 [1] CRAN (R 4.2.2)
+ survival         3.4-0      2022-08-09 [3] CRAN (R 4.2.2)
+ tibble         * 3.2.1      2023-03-20 [1] CRAN (R 4.2.2)
+ tidyr          * 1.3.0      2023-01-24 [1] CRAN (R 4.2.2)
+ tidyselect       1.2.0      2022-10-10 [1] CRAN (R 4.2.2)
+ tidyverse      * 2.0.0      2023-02-22 [1] CRAN (R 4.2.2)
+ timechange       0.2.0      2023-01-11 [1] CRAN (R 4.2.2)
+ tzdb             0.4.0      2023-05-12 [1] CRAN (R 4.2.2)
+ units            0.8-2      2023-04-27 [1] CRAN (R 4.2.2)
+ urlchecker       1.0.1      2021-11-30 [1] CRAN (R 4.2.2)
+ usethis          2.2.2      2023-07-06 [1] CRAN (R 4.2.2)
+ utf8             1.2.3      2023-01-31 [1] CRAN (R 4.2.2)
+ vctrs            0.6.3      2023-06-14 [1] CRAN (R 4.2.2)
+ viridisLite      0.4.2      2023-05-02 [1] CRAN (R 4.2.2)
+ vmstools         0.76       2022-11-24 [1] Github (nielshintzen/vmstools@b1a1a70)
+ vroom            1.6.3      2023-04-28 [1] CRAN (R 4.2.2)
+ withr            2.5.0      2022-03-03 [1] CRAN (R 4.2.2)
+ xml2             1.3.5      2023-07-06 [1] CRAN (R 4.2.2)
+ xtable           1.8-4      2019-04-21 [1] CRAN (R 4.2.2)
+
+ [1] /home/haf/einarhj/R/x86_64-pc-linux-gnu-library/4.2
+ [2] /usr/local/lib/R/site/x86_64-pc-linux-gnu-library/4.2
+ [3] /usr/lib/R/library
+
+──────────────────────────────────────────────────────────────────────────────
+> 
